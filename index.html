@@ -99,7 +99,6 @@ function formatRupiah(num) {
 async function saveData() {
   const tanggal = new Date().toLocaleDateString("id-ID", { year:'numeric', month:'2-digit', day:'2-digit' });
 
-  // Kirim data dengan field berkapital (sesuai dengan yang umum digunakan di spreadsheet)
   const data = {
     Date: tanggal,
     Description: document.getElementById("description").value,
@@ -116,16 +115,14 @@ async function saveData() {
   try {
     await fetch(WEB_APP_URL, {
       method: "POST",
-      mode: "no-cors", // mode no-cors agar tidak terkendala CORS
+      mode: "no-cors",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data)
     });
 
-    // Reset form
     document.getElementById("description").value = "";
     document.getElementById("amount").value = "";
 
-    // Beri sedikit waktu agar spreadsheet memperbarui data, lalu muat ulang
     setTimeout(() => {
       loadData();
     }, 500);
@@ -140,19 +137,50 @@ let chart;
 
 async function loadData() {
   try {
+    console.log("Mencoba mengambil data dari:", WEB_APP_URL);
     const res = await fetch(WEB_APP_URL);
-    let data = await res.json();
+    
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`);
+    }
 
-    console.log("Data mentah dari server:", data); // untuk debugging
+    const text = await res.text(); // ambil sebagai teks dulu untuk debugging
+    console.log("Respons mentah (text):", text);
 
-    // Pastikan data adalah array, jika tidak coba ambil dari properti 'data'
-    if (!Array.isArray(data)) {
-      console.warn("Data bukan array, mencoba mengambil dari properti 'data'");
-      if (data && data.data && Array.isArray(data.data)) {
-        data = data.data;
+    let data;
+    try {
+      data = JSON.parse(text); // coba parse JSON
+    } catch (e) {
+      console.error("Respons bukan JSON valid:", text);
+      throw new Error("Server tidak mengembalikan JSON yang valid");
+    }
+
+    console.log("Data hasil parse:", data);
+
+    // Jika data adalah array, langsung gunakan
+    if (Array.isArray(data)) {
+      // ok
+    } 
+    // Jika data adalah objek dengan properti 'data' yang berisi array
+    else if (data && Array.isArray(data.data)) {
+      data = data.data;
+    } 
+    // Jika data adalah objek dengan properti lain, mungkin butuh penyesuaian
+    else {
+      console.warn("Struktur data tidak dikenal. Mencoba menebak...");
+      // Coba cari properti yang berisi array
+      const possibleArrays = Object.values(data).filter(v => Array.isArray(v));
+      if (possibleArrays.length > 0) {
+        data = possibleArrays[0]; // ambil array pertama yang ditemukan
+        console.log("Menggunakan array pertama yang ditemukan:", data);
       } else {
-        throw new Error("Format data tidak dikenal");
+        throw new Error("Tidak dapat menemukan array data dalam respons");
       }
+    }
+
+    // Pastikan data adalah array
+    if (!Array.isArray(data)) {
+      throw new Error("Data akhir bukan array");
     }
 
     let pemasukan = 0;
@@ -167,14 +195,11 @@ async function loadData() {
       let jumlah = item.Amount || item.amount || 0;
       const tipe = item.Type || item.type || "";
 
-      // Bersihkan jumlah: hapus "Rp", spasi, dan ubah koma desimal menjadi titik
+      // Bersihkan jumlah jika string
       if (typeof jumlah === "string") {
-        // Hapus karakter selain digit, koma, titik, minus
-        jumlah = jumlah.replace(/[^\d,\-]/g, '');
-        // Ganti koma desimal dengan titik (asumsi format Indonesia)
-        jumlah = jumlah.replace(',', '.');
+        jumlah = jumlah.replace(/[^\d,\-]/g, '').replace(',', '.');
       }
-      jumlah = Number(jumlah) || 0; // konversi ke angka, jika NaN jadi 0
+      jumlah = Number(jumlah) || 0;
 
       if (tipe.toLowerCase() === "pemasukan") pemasukan += jumlah;
       if (tipe.toLowerCase() === "pengeluaran") pengeluaran += jumlah;
@@ -190,7 +215,6 @@ async function loadData() {
       `;
     });
 
-    // Update elemen summary
     document.getElementById("tableBody").innerHTML = tableHTML;
     document.getElementById("masuk").innerText = formatRupiah(pemasukan);
     document.getElementById("keluar").innerText = formatRupiah(pengeluaran);
@@ -202,16 +226,14 @@ async function loadData() {
 
   } catch(err) {
     console.error("Gagal memuat data:", err);
-    alert("Tidak dapat mengambil data dari spreadsheet. Periksa konsol untuk detail.");
+    alert("Tidak dapat mengambil data dari spreadsheet. Periksa konsol (F12) untuk detail error.");
   }
 }
 
 // ================= CHART =================
 function renderChart(pemasukan, pengeluaran) {
   const ctx = document.getElementById("chart").getContext("2d");
-
   if (chart) chart.destroy();
-
   chart = new Chart(ctx, {
     type: "doughnut",
     data: {
