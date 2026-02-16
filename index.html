@@ -62,7 +62,10 @@
 
 <!-- TABLE -->
 <div class="bg-white p-6 rounded shadow">
-  <h2 class="text-xl font-bold mb-4">Riwayat Transaksi</h2>
+  <div class="flex justify-between items-center mb-4">
+    <h2 class="text-xl font-bold">Riwayat Transaksi</h2>
+    <button onclick="loadData()" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Refresh</button>
+  </div>
 
   <div class="mb-4">
     <p><strong>Total Pemasukan:</strong> <span id="totalMasuk">Rp 0</span></p>
@@ -96,7 +99,7 @@ function formatRupiah(num) {
 async function saveData() {
   const tanggal = new Date().toLocaleDateString("id-ID", { year:'numeric', month:'2-digit', day:'2-digit' });
 
-  // Gunakan field dengan kapital awal agar konsisten dengan response dari Spreadsheet
+  // Kirim data dengan field berkapital (sesuai dengan yang umum digunakan di spreadsheet)
   const data = {
     Date: tanggal,
     Description: document.getElementById("description").value,
@@ -113,7 +116,7 @@ async function saveData() {
   try {
     await fetch(WEB_APP_URL, {
       method: "POST",
-      mode: "no-cors", // mode no-cors tetap digunakan agar tidak terkendala CORS
+      mode: "no-cors", // mode no-cors agar tidak terkendala CORS
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data)
     });
@@ -122,8 +125,10 @@ async function saveData() {
     document.getElementById("description").value = "";
     document.getElementById("amount").value = "";
 
-    // Muat ulang data dari spreadsheet untuk memperbarui tampilan
-    await loadData();
+    // Beri sedikit waktu agar spreadsheet memperbarui data, lalu muat ulang
+    setTimeout(() => {
+      loadData();
+    }, 500);
   } catch (error) {
     console.error("Gagal menyimpan data:", error);
     alert("Terjadi kesalahan saat menyimpan. Coba lagi.");
@@ -136,12 +141,18 @@ let chart;
 async function loadData() {
   try {
     const res = await fetch(WEB_APP_URL);
-    const data = await res.json();
+    let data = await res.json();
 
-    // Pastikan data adalah array
+    console.log("Data mentah dari server:", data); // untuk debugging
+
+    // Pastikan data adalah array, jika tidak coba ambil dari properti 'data'
     if (!Array.isArray(data)) {
-      console.error("Data yang diterima bukan array:", data);
-      return;
+      console.warn("Data bukan array, mencoba mengambil dari properti 'data'");
+      if (data && data.data && Array.isArray(data.data)) {
+        data = data.data;
+      } else {
+        throw new Error("Format data tidak dikenal");
+      }
     }
 
     let pemasukan = 0;
@@ -149,15 +160,24 @@ async function loadData() {
     let tableHTML = "";
 
     data.forEach(item => {
-      // Gunakan field dengan kapital awal (sesuai response dari Apps Script)
-      const tgl = item.Date || "";
-      const desc = item.Description || "";
-      const kat = item.Category || "";
-      const jumlah = Number(item.Amount) || 0;
-      const tipe = item.Type || "";
+      // Baca field dengan berbagai kemungkinan nama (case-insensitive)
+      const tgl = item.Date || item.date || item.tanggal || "";
+      const desc = item.Description || item.description || "";
+      const kat = item.Category || item.category || "";
+      let jumlah = item.Amount || item.amount || 0;
+      const tipe = item.Type || item.type || "";
 
-      if (tipe === "Pemasukan") pemasukan += jumlah;
-      if (tipe === "Pengeluaran") pengeluaran += jumlah;
+      // Bersihkan jumlah: hapus "Rp", spasi, dan ubah koma desimal menjadi titik
+      if (typeof jumlah === "string") {
+        // Hapus karakter selain digit, koma, titik, minus
+        jumlah = jumlah.replace(/[^\d,\-]/g, '');
+        // Ganti koma desimal dengan titik (asumsi format Indonesia)
+        jumlah = jumlah.replace(',', '.');
+      }
+      jumlah = Number(jumlah) || 0; // konversi ke angka, jika NaN jadi 0
+
+      if (tipe.toLowerCase() === "pemasukan") pemasukan += jumlah;
+      if (tipe.toLowerCase() === "pengeluaran") pengeluaran += jumlah;
 
       tableHTML += `
         <tr class="border-b">
@@ -182,7 +202,7 @@ async function loadData() {
 
   } catch(err) {
     console.error("Gagal memuat data:", err);
-    alert("Tidak dapat mengambil data dari spreadsheet.");
+    alert("Tidak dapat mengambil data dari spreadsheet. Periksa konsol untuk detail.");
   }
 }
 
