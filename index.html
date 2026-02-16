@@ -96,31 +96,38 @@ function formatRupiah(num) {
 async function saveData() {
   const tanggal = new Date().toLocaleDateString("id-ID", { year:'numeric', month:'2-digit', day:'2-digit' });
 
+  // Gunakan field dengan kapital awal agar konsisten dengan response dari Spreadsheet
   const data = {
-    date: tanggal,
-    description: document.getElementById("description").value,
-    category: document.getElementById("category").value,
-    amount: document.getElementById("amount").value,
-    type: document.getElementById("type").value
+    Date: tanggal,
+    Description: document.getElementById("description").value,
+    Category: document.getElementById("category").value,
+    Amount: document.getElementById("amount").value,
+    Type: document.getElementById("type").value
   };
 
-  if (!data.description || !data.amount) {
+  if (!data.Description || !data.Amount) {
     alert("Isi semua data!");
     return;
   }
 
-  await fetch(WEB_APP_URL, {
-    method: "POST",
-    mode: "no-cors",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data)
-  });
+  try {
+    await fetch(WEB_APP_URL, {
+      method: "POST",
+      mode: "no-cors", // mode no-cors tetap digunakan agar tidak terkendala CORS
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data)
+    });
 
-  document.getElementById("description").value = "";
-  document.getElementById("amount").value = "";
+    // Reset form
+    document.getElementById("description").value = "";
+    document.getElementById("amount").value = "";
 
-  // update langsung mengikuti spreadsheet
-  await loadData();
+    // Muat ulang data dari spreadsheet untuk memperbarui tampilan
+    await loadData();
+  } catch (error) {
+    console.error("Gagal menyimpan data:", error);
+    alert("Terjadi kesalahan saat menyimpan. Coba lagi.");
+  }
 }
 
 // ================= LOAD DATA =================
@@ -131,26 +138,39 @@ async function loadData() {
     const res = await fetch(WEB_APP_URL);
     const data = await res.json();
 
+    // Pastikan data adalah array
+    if (!Array.isArray(data)) {
+      console.error("Data yang diterima bukan array:", data);
+      return;
+    }
+
     let pemasukan = 0;
     let pengeluaran = 0;
     let tableHTML = "";
 
     data.forEach(item => {
-      if (item.Type === "Pemasukan") pemasukan += Number(item.Amount);
-      if (item.Type === "Pengeluaran") pengeluaran += Number(item.Amount);
+      // Gunakan field dengan kapital awal (sesuai response dari Apps Script)
+      const tgl = item.Date || "";
+      const desc = item.Description || "";
+      const kat = item.Category || "";
+      const jumlah = Number(item.Amount) || 0;
+      const tipe = item.Type || "";
+
+      if (tipe === "Pemasukan") pemasukan += jumlah;
+      if (tipe === "Pengeluaran") pengeluaran += jumlah;
 
       tableHTML += `
         <tr class="border-b">
-          <td class="p-2">${item.date || ""}</td>
-          <td class="p-2">${item.Description}</td>
-          <td class="p-2">${item.Category}</td>
-          <td class="p-2">${formatRupiah(item.Amount)}</td>
-          <td class="p-2">${item.Type}</td>
+          <td class="p-2">${tgl}</td>
+          <td class="p-2">${desc}</td>
+          <td class="p-2">${kat}</td>
+          <td class="p-2">${formatRupiah(jumlah)}</td>
+          <td class="p-2">${tipe}</td>
         </tr>
       `;
     });
 
-    // update tabel & total mengikuti spreadsheet
+    // Update elemen summary
     document.getElementById("tableBody").innerHTML = tableHTML;
     document.getElementById("masuk").innerText = formatRupiah(pemasukan);
     document.getElementById("keluar").innerText = formatRupiah(pengeluaran);
@@ -162,12 +182,13 @@ async function loadData() {
 
   } catch(err) {
     console.error("Gagal memuat data:", err);
+    alert("Tidak dapat mengambil data dari spreadsheet.");
   }
 }
 
 // ================= CHART =================
 function renderChart(pemasukan, pengeluaran) {
-  const ctx = document.getElementById("chart");
+  const ctx = document.getElementById("chart").getContext("2d");
 
   if (chart) chart.destroy();
 
@@ -186,7 +207,6 @@ function renderChart(pemasukan, pengeluaran) {
 
 // ================= INIT =================
 loadData();
-
 </script>
 
 </body>
